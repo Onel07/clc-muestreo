@@ -1,0 +1,1383 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b1015">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="CLC Muestreo">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icon-192.png">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<title>CLC Muestreo — Corine Land Cover N1/N2</title>
+<style>
+:root{
+  --bg:#0b1015; --panel:#151c24; --panel2:#1d2731; --line:#2a3746;
+  --txt:#e8eef5; --txt2:#9fb0c0; --acc:#3ea6ff; --ok:#3ddc84; --warn:#ffb020; --err:#ff5c5c;
+  --h-bar:56px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;height:100%;overflow:hidden;background:var(--bg);color:var(--txt);
+  font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overscroll-behavior:none;
+  -webkit-text-size-adjust:100%;text-size-adjust:100%;touch-action:manipulation;
+  -webkit-user-select:none;user-select:none}
+/* el texto que el usuario puede necesitar copiar sí es seleccionable */
+input,textarea,#detBody,.note{-webkit-user-select:text;user-select:text}
+button,select,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer;border:0;background:none}
+/* Modo sol: más contraste para pantallas al aire libre */
+body.sol{--panel:#0a0f14;--panel2:#18222c;--line:#3d5065;--txt:#ffffff;--txt2:#c9d6e2;--acc:#4db5ff}
+body.sol #map{filter:contrast(1.14) saturate(1.1) brightness(1.06)}
+body.sol .bbtn,body.sol .btn,body.sol .mbtn{border-width:1.5px}
+
+#app{position:fixed;inset:0;display:flex;flex-direction:column}
+
+/* ---------- Barra superior ---------- */
+#top{height:var(--h-bar);flex:0 0 auto;background:var(--panel);border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:10px;padding:0 10px;padding-top:env(safe-area-inset-top)}
+#gpsdot{width:11px;height:11px;border-radius:50%;background:var(--err);flex:0 0 auto;box-shadow:0 0 0 0 rgba(61,220,132,.6)}
+#gpsdot.on{background:var(--ok);animation:pulse 2s infinite}
+#gpsdot.wait{background:var(--warn)}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(61,220,132,.55)}70%{box-shadow:0 0 0 9px rgba(61,220,132,0)}100%{box-shadow:0 0 0 0 rgba(61,220,132,0)}}
+#coords{font:12px/1.25 ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--txt2);white-space:nowrap;overflow:hidden}
+#coords b{color:var(--txt);font-weight:600}
+#topspacer{flex:1}
+.chip{background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:5px 10px;font-size:12px;color:var(--txt2);white-space:nowrap}
+.chip b{color:var(--txt)}
+
+/* ---------- Mapa ---------- */
+#mapwrap{position:relative;flex:1;min-height:0;background:#0a0d11;touch-action:none}
+#map{position:absolute;inset:0;width:100%;height:100%;display:block}
+#cross{position:absolute;left:50%;top:50%;width:60px;height:60px;margin:-30px 0 0 -30px;pointer-events:none}
+#cross:before,#cross:after{content:"";position:absolute;background:rgba(255,255,255,.9);box-shadow:0 0 2px #000}
+#cross:before{left:50%;top:0;width:1.5px;height:100%;margin-left:-.75px}
+#cross:after{top:50%;left:0;height:1.5px;width:100%;margin-top:-.75px}
+#crossdot{position:absolute;left:50%;top:50%;width:12px;height:12px;margin:-6px 0 0 -6px;border:2px solid #fff;
+  border-radius:50%;box-shadow:0 0 3px #000;background:rgba(62,166,255,.35)}
+#mapmsg{position:absolute;left:8px;bottom:8px;background:rgba(0,0,0,.55);border-radius:6px;padding:3px 7px;
+  font-size:10px;color:#cfd8e3;pointer-events:none;max-width:70%}
+#zoombox{position:absolute;right:8px;top:8px;display:flex;flex-direction:column;gap:6px}
+.mbtn{width:48px;height:48px;border-radius:12px;background:rgba(21,28,36,.92);border:1px solid var(--line);
+  color:var(--txt);font-size:20px;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+.mbtn.act{background:var(--acc);border-color:var(--acc);color:#04121f}
+#scalebar{position:absolute;right:8px;bottom:8px;color:#fff;font-size:10px;text-align:center;text-shadow:0 0 3px #000;pointer-events:none}
+#scaleline{height:6px;border:1.5px solid #fff;border-top:0;box-shadow:0 0 3px #000}
+
+/* ---------- Barra inferior ---------- */
+#bottom{flex:0 0 auto;background:var(--panel);border-top:1px solid var(--line);display:flex;
+  padding:6px 6px calc(6px + env(safe-area-inset-bottom));gap:6px}
+.bbtn{flex:1;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:9px 4px;
+  min-height:56px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  font-size:11px;color:var(--txt2)}
+.bbtn .ic{font-size:21px;line-height:1}
+.bbtn.primary{background:var(--acc);border-color:var(--acc);color:#04121f;font-weight:700;flex:1.5}
+.bbtn:active{transform:scale(.97)}
+
+/* ---------- Paneles ---------- */
+.sheet{position:fixed;inset:0;z-index:40;display:none}
+.sheet.open{display:block}
+.sheet .bg{position:absolute;inset:0;background:rgba(0,0,0,.55)}
+.sheet .card{position:absolute;left:0;right:0;bottom:0;max-height:88%;background:var(--panel);
+  border-radius:16px 16px 0 0;border-top:1px solid var(--line);display:flex;flex-direction:column;
+  padding-bottom:env(safe-area-inset-bottom);animation:up .18s ease-out}
+@keyframes up{from{transform:translateY(24px);opacity:.4}to{transform:none;opacity:1}}
+.sheet h2{margin:0;font-size:15px;font-weight:650}
+.shead{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.shead .x{margin-left:auto;font-size:20px;color:var(--txt2);padding:0 4px}
+.sbody{overflow:auto;padding:12px 14px;-webkit-overflow-scrolling:touch}
+.sfoot{padding:10px 14px;border-top:1px solid var(--line);display:flex;gap:8px}
+
+label.f{display:block;margin:10px 0 5px;font-size:11.5px;color:var(--txt2);text-transform:uppercase;letter-spacing:.4px}
+select,input[type=text],input[type=number],textarea{width:100%;background:var(--panel2);border:1px solid var(--line);
+  border-radius:9px;padding:12px 10px;outline:none;font-size:16px}   /* 16px evita el zoom automático en iOS */
+select:focus,input:focus,textarea:focus{border-color:var(--acc)}
+textarea{resize:vertical;min-height:60px}
+.btn{border-radius:10px;padding:13px 14px;min-height:48px;background:var(--panel2);border:1px solid var(--line);font-weight:600;flex:1;text-align:center}
+.btn.pri{background:var(--acc);border-color:var(--acc);color:#04121f}
+.btn.dan{background:#3a1f24;border-color:#5d2a30;color:#ff9a9a}
+.btn.sm{padding:8px 10px;font-size:12.5px;font-weight:500;flex:none}
+.row{display:flex;gap:8px;align-items:center}
+.row>*{min-width:0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.note{font-size:11.5px;color:var(--txt2);line-height:1.45}
+.sw{width:14px;height:14px;border-radius:3px;flex:0 0 auto;border:1px solid rgba(0,0,0,.4)}
+
+/* clases N1 como botones */
+.n1grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.n1b{border:1.5px solid var(--line);background:var(--panel2);border-radius:10px;padding:11px 9px;min-height:56px;
+  text-align:left;display:flex;gap:8px;align-items:center;font-size:12.5px;line-height:1.25}
+.n1b.sel{border-color:var(--acc);background:#12283a}
+.n2b{width:100%;border:1.5px solid var(--line);background:var(--panel2);border-radius:10px;padding:12px 10px;
+  min-height:48px;text-align:left;display:flex;gap:9px;align-items:center;font-size:13px;margin-bottom:7px}
+.n2b.sel{border-color:var(--acc);background:#12283a}
+.n2b .cod{font:11px ui-monospace,monospace;color:var(--txt2);min-width:26px}
+
+/* lista de muestras */
+.item{display:flex;gap:10px;align-items:center;padding:12px 8px;min-height:56px;border-bottom:1px solid var(--line)}
+.item .meta{flex:1;min-width:0}
+.item .t{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .s{font:11px ui-monospace,monospace;color:var(--txt2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .go{font-size:17px;color:var(--txt2);padding:6px}
+
+#toast{position:fixed;left:50%;bottom:calc(var(--h-bar) + 26px);transform:translateX(-50%);z-index:90;
+  background:#0f1620;border:1px solid var(--line);border-radius:10px;padding:10px 15px;font-size:13px;
+  box-shadow:0 8px 24px rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .2s;max-width:88%;text-align:center}
+#toast.show{opacity:1}
+#warn{display:none;background:#3a2c10;border-bottom:1px solid #5c4517;color:#ffd489;font-size:11.5px;padding:7px 10px}
+.progress{height:8px;background:var(--panel2);border-radius:5px;overflow:hidden;border:1px solid var(--line)}
+.progress i{display:block;height:100%;background:var(--acc);width:0}
+.kv{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px dashed var(--line);font-size:12.5px}
+.kv span:first-child{color:var(--txt2)}
+.kv span:last-child{font-family:ui-monospace,monospace;text-align:right}
+img.photo{width:100%;border-radius:10px;margin-top:8px;display:block}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="top">
+    <div id="gpsdot" title="Estado GPS"></div>
+    <div id="coords">Sin posición GPS</div>
+    <div id="topspacer"></div>
+    <div class="chip" id="chipN">Muestras <b>0</b></div>
+  </div>
+  <div id="warn"></div>
+
+  <div id="mapwrap">
+    <canvas id="map"></canvas>
+    <div id="cross"></div><div id="crossdot"></div>
+    <div id="zoombox">
+      <button class="mbtn" id="bFollow" title="Centrar en GPS">◎</button>
+      <button class="mbtn" id="bIn">+</button>
+      <button class="mbtn" id="bOut">−</button>
+      <button class="mbtn" id="bSol" title="Modo sol (alto contraste)">☀</button>
+    </div>
+    <div id="scalebar"><div id="scaletxt">—</div><div id="scaleline" style="width:60px"></div></div>
+    <div id="mapmsg">Esri World Imagery — Esri, Maxar, Earthstar Geographics</div>
+  </div>
+
+  <div id="bottom">
+    <button class="bbtn primary" id="bCapture"><span class="ic">⊕</span><span>Capturar</span></button>
+    <button class="bbtn" id="bList"><span class="ic">🗂</span><span>Muestras</span></button>
+    <button class="bbtn" id="bExport"><span class="ic">⬇</span><span>Exportar</span></button>
+    <button class="bbtn" id="bLayers"><span class="ic">☰</span><span>Mapa</span></button>
+  </div>
+</div>
+
+<!-- ============ Sheet: captura ============ -->
+<div class="sheet" id="shCapture">
+  <div class="bg" data-close></div>
+  <div class="card">
+    <div class="shead"><h2 id="capTitle">Nueva muestra</h2><button class="x" data-close>✕</button></div>
+    <div class="sbody">
+      <div class="row" style="gap:6px">
+        <button class="btn sm" id="srcGPS" style="flex:1">📡 Posición GPS</button>
+        <button class="btn sm" id="srcMap" style="flex:1">🎯 Centro de la mira</button>
+      </div>
+      <button class="btn sm" id="bAvg" style="width:100%;margin-top:6px">🎚 Promediar GPS (10 lecturas)</button>
+      <div id="capPos" class="note" style="margin-top:8px"></div>
+
+      <label class="f">Nivel 1 — Categoría principal</label>
+      <div class="n1grid" id="n1grid"></div>
+
+      <label class="f">Nivel 2 — Subcategoría</label>
+      <div id="n2list"></div>
+
+      <div class="grid2">
+        <div>
+          <label class="f">Confianza</label>
+          <select id="fConf"><option>Alta</option><option>Media</option><option>Baja</option></select>
+        </div>
+        <div>
+          <label class="f">Foto (opcional)</label>
+          <input type="file" id="fPhoto" accept="image/*" capture="environment" style="display:none">
+          <button class="btn sm" id="bPhoto" style="width:100%;padding:10px">📷 Adjuntar</button>
+        </div>
+      </div>
+      <img class="photo" id="photoPrev" style="display:none">
+
+      <label class="f">Observaciones</label>
+      <textarea id="fObs" placeholder="Descripción del punto, especies dominantes, uso, evidencias…"></textarea>
+    </div>
+    <div class="sfoot">
+      <button class="btn" data-close>Cancelar</button>
+      <button class="btn pri" id="bSave">Guardar muestra</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Sheet: lista ============ -->
+<div class="sheet" id="shList">
+  <div class="bg" data-close></div>
+  <div class="card">
+    <div class="shead"><h2>Muestras capturadas</h2><button class="x" data-close>✕</button></div>
+    <div class="sbody">
+      <div id="stats" class="note" style="margin-bottom:8px"></div>
+      <div id="listBox"></div>
+    </div>
+    <div class="sfoot">
+      <button class="btn sm" id="bImport" style="flex:1">📥 Importar GeoJSON</button>
+      <button class="btn dan sm" id="bClear" style="flex:1">Borrar todo</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Sheet: detalle ============ -->
+<div class="sheet" id="shDetail">
+  <div class="bg" data-close></div>
+  <div class="card">
+    <div class="shead"><h2 id="detTitle">Muestra</h2><button class="x" data-close>✕</button></div>
+    <div class="sbody" id="detBody"></div>
+    <div class="sfoot">
+      <button class="btn dan" id="bDel">Eliminar</button>
+      <button class="btn" id="bGoto">Ir al punto</button>
+      <button class="btn pri" id="bEdit">Editar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Sheet: exportar ============ -->
+<div class="sheet" id="shExport">
+  <div class="bg" data-close></div>
+  <div class="card">
+    <div class="shead"><h2>Exportar datos</h2><button class="x" data-close>✕</button></div>
+    <div class="sbody">
+      <p class="note">Formatos listos para ArcGIS Pro / ArcMap / ArcGIS Online. La tabla de atributos incluye
+      <code>N1_COD, N1_NOM, N2_COD, N2_NOM, LON, LAT, ALT_M, PREC_M, FUENTE, CONF, FECHA, HORA, OBS, FOTO</code>
+      en coordenadas geográficas WGS 84 (EPSG:4326).</p>
+      <label class="f">Nombre base del archivo</label>
+      <input type="text" id="expName" value="muestras_clc">
+      <div class="row" style="margin-top:10px">
+        <input type="checkbox" id="chkShare" style="width:auto" checked>
+        <label for="chkShare" style="margin:0">Compartir con otra app (correo, Drive, WhatsApp) en vez de descargar</label>
+      </div>
+      <div style="height:12px"></div>
+      <button class="btn pri" id="eShp" style="width:100%;margin-bottom:8px">📦 Shapefile (.zip: shp+shx+dbf+prj+cpg)</button>
+      <button class="btn" id="eEsri" style="width:100%;margin-bottom:8px">🧩 Esri JSON — FeatureSet (.json)</button>
+      <button class="btn" id="eGeo" style="width:100%;margin-bottom:8px">🌐 GeoJSON (.geojson)</button>
+      <button class="btn" id="eCsv" style="width:100%;margin-bottom:8px">📊 CSV / tabla XY (.csv)</button>
+      <p class="note"><b>Shapefile:</b> descomprimir y arrastrar el <code>.shp</code> al mapa.<br>
+      <b>Esri JSON:</b> <code>JSON To Features</code> (Conversion Tools).<br>
+      <b>CSV:</b> <code>XY Table To Point</code> con X=LON, Y=LAT, GCS_WGS_1984.<br>
+      Si adjuntaste fotos, el ZIP del shapefile incluye la carpeta <code>fotos/</code> y el campo <code>FOTO</code> sirve como hipervínculo relativo.</p>
+    </div>
+    <div class="sfoot"><button class="btn" data-close>Cerrar</button></div>
+  </div>
+</div>
+
+<!-- ============ Sheet: mapa / capas ============ -->
+<div class="sheet" id="shLayers">
+  <div class="bg" data-close></div>
+  <div class="card">
+    <div class="shead"><h2>Mapa base y modo offline</h2><button class="x" data-close>✕</button></div>
+    <div class="sbody">
+      <label class="f">Imagen de fondo</label>
+      <select id="selBase">
+        <option value="esri">Esri World Imagery (satelital)</option>
+        <option value="esriClarity">Esri Imagery Clarity (satelital alt.)</option>
+        <option value="osm">OpenStreetMap (referencia)</option>
+        <option value="none">Sin fondo (solo rejilla)</option>
+      </select>
+      <div class="row" style="margin-top:10px">
+        <input type="checkbox" id="chkLabels" style="width:auto"><label for="chkLabels" style="margin:0">Etiquetas y límites sobre la imagen</label>
+      </div>
+
+      <label class="f">Ir a coordenada (lat, lon)</label>
+      <div class="row">
+        <input type="text" id="gotoXY" placeholder="4.6097, -74.0817">
+        <button class="btn sm" id="bGo">Ir</button>
+      </div>
+
+      <label class="f">Descargar teselas para trabajar sin internet</label>
+      <p class="note">Descarga el área visible en el rango de zoom indicado y la guarda en el dispositivo.
+      Hazlo con internet <b>antes</b> de salir a campo; luego la app funciona completamente offline.</p>
+      <div class="grid2">
+        <div><label class="f">Zoom máximo</label><select id="dlZoom">
+          <option value="15">15 (≈4.8 m/px)</option><option value="16">16 (≈2.4 m/px)</option>
+          <option value="17" selected>17 (≈1.2 m/px)</option><option value="18">18 (≈0.6 m/px)</option>
+          <option value="19">19 (≈0.3 m/px)</option></select></div>
+        <div><label class="f">&nbsp;</label><button class="btn" id="bEstim" style="width:100%">Calcular</button></div>
+      </div>
+      <div id="dlInfo" class="note" style="margin-top:8px"></div>
+      <div class="progress" style="margin-top:8px"><i id="dlBar"></i></div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn pri" id="bDownload">⬇ Descargar área</button>
+        <button class="btn sm" id="bCancelDl">Detener</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn sm" id="bCacheInfo" style="flex:1">Ver caché</button>
+        <button class="btn dan sm" id="bCacheClear" style="flex:1">Vaciar caché</button>
+      </div>
+      <div id="cacheInfo" class="note" style="margin-top:6px"></div>
+
+      <label class="f">Teléfono</label>
+      <div class="row">
+        <button class="btn sm" id="bInstall" style="flex:1">📲 Instalar app</button>
+        <button class="btn sm" id="bPersist" style="flex:1">🔒 Proteger datos</button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <input type="checkbox" id="chkWake" style="width:auto" checked>
+        <label for="chkWake" style="margin:0">Mantener la pantalla encendida mientras trabajo</label>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <input type="checkbox" id="chkVibra" style="width:auto" checked>
+        <label for="chkVibra" style="margin:0">Vibrar al guardar una muestra</label>
+      </div>
+      <div id="movilInfo" class="note" style="margin-top:6px"></div>
+
+      <label class="f">Ayuda rápida</label>
+      <p class="note">• Arrastra para desplazar, pellizca con dos dedos para el zoom.<br>
+      • ◎ activa el seguimiento de tu posición GPS; ☀ sube el contraste a pleno sol.<br>
+      • <b>Capturar</b> registra el punto en tu posición GPS o en el centro de la mira;
+        <b>Promediar GPS</b> toma 10 lecturas y usa la media (mejor precisión bajo dosel).<br>
+      • Toca un punto del mapa para ver, editar o eliminar la muestra.<br>
+      • Todo se guarda en el teléfono; puedes cerrar la app sin perder datos.</p>
+    </div>
+    <div class="sfoot"><button class="btn" data-close>Cerrar</button></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<input type="file" id="fileImport" accept=".geojson,.json" style="display:none">
+
+<script>
+"use strict";
+/* =====================================================================
+   CLC Muestreo — captura de muestras Corine Land Cover N1/N2
+   100% offline, sin dependencias externas. Exporta a formatos ArcGIS.
+   ===================================================================== */
+
+/* ---------------------------------------------------------------
+   1. Leyenda Corine Land Cover (Nivel 1 y Nivel 2)
+   Colores según la paleta oficial CLC.
+   --------------------------------------------------------------- */
+const CLC = [
+ {cod:"1", nom:"Territorios artificializados", color:"#e6004d", hijos:[
+   {cod:"1.1", nom:"Zonas urbanizadas", color:"#e6004d"},
+   {cod:"1.2", nom:"Zonas industriales o comerciales y redes de comunicación", color:"#cc4df2"},
+   {cod:"1.3", nom:"Zonas de extracción minera y escombreras", color:"#a600cc"},
+   {cod:"1.4", nom:"Zonas verdes artificializadas, no agrícolas", color:"#ff4dff"}]},
+ {cod:"2", nom:"Territorios agrícolas", color:"#ffffa8", hijos:[
+   {cod:"2.1", nom:"Cultivos transitorios", color:"#ffffa8"},
+   {cod:"2.2", nom:"Cultivos permanentes", color:"#f2a64d"},
+   {cod:"2.3", nom:"Pastos", color:"#e6e64d"},
+   {cod:"2.4", nom:"Áreas agrícolas heterogéneas", color:"#ffe6a6"}]},
+ {cod:"3", nom:"Bosques y áreas seminaturales", color:"#80ff00", hijos:[
+   {cod:"3.1", nom:"Bosques", color:"#008000"},
+   {cod:"3.2", nom:"Áreas con vegetación herbácea y/o arbustiva", color:"#ccf24d"},
+   {cod:"3.3", nom:"Áreas abiertas, sin o con poca vegetación", color:"#e6e6e6"}]},
+ {cod:"4", nom:"Áreas húmedas", color:"#a6a6ff", hijos:[
+   {cod:"4.1", nom:"Áreas húmedas continentales", color:"#a6a6ff"},
+   {cod:"4.2", nom:"Áreas húmedas costeras", color:"#4d4dff"}]},
+ {cod:"5", nom:"Superficies de agua", color:"#00ccf2", hijos:[
+   {cod:"5.1", nom:"Aguas continentales", color:"#00ccf2"},
+   {cod:"5.2", nom:"Aguas marítimas", color:"#e6f2ff"}]}
+];
+const N2BY = {}; CLC.forEach(a=>a.hijos.forEach(h=>N2BY[h.cod]={...h,n1:a.cod,n1nom:a.nom}));
+
+/* ---------------------------------------------------------------
+   2. Utilidades
+   --------------------------------------------------------------- */
+const $ = s=>document.querySelector(s), $$ = s=>[...document.querySelectorAll(s)];
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+let toastT;
+function toast(msg,ms){const t=$("#toast");t.textContent=msg;t.classList.add("show");
+  clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("show"),ms||2200);}
+function warn(msg){const w=$("#warn");if(!msg){w.style.display="none";return;}w.textContent=msg;w.style.display="block";}
+function pad(n,l){n=String(n);return n.length>=l?n:"0".repeat(l-n.length)+n;}
+function uid(){return "M"+Date.now().toString(36).toUpperCase()+Math.random().toString(36).slice(2,6).toUpperCase();}
+function fmtDMS(v,ejes){const s=v<0?ejes[1]:ejes[0];v=Math.abs(v);const d=Math.floor(v),m=Math.floor((v-d)*60),
+  sec=((v-d)*60-m)*60;return `${d}°${pad(m,2)}'${sec.toFixed(1)}"${s}`;}
+function saveAs(blob,name){const u=URL.createObjectURL(blob),a=document.createElement("a");
+  a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000);}
+
+/* En el teléfono, "descargar" es incómodo: si el sistema lo permite se ofrece
+   compartir el archivo con otra app (correo, Drive, WhatsApp). Si no, se descarga. */
+async function download(blob,name){
+  const quiereCompartir = !$("#chkShare") || $("#chkShare").checked;
+  if(quiereCompartir && navigator.canShare){
+    try{
+      const f=new File([blob],name,{type:blob.type||"application/octet-stream"});
+      if(navigator.canShare({files:[f]})){ await navigator.share({files:[f],title:name}); return; }
+    }catch(e){ if(e && e.name==="AbortError") return; }   // el usuario canceló
+  }
+  saveAs(blob,name);
+}
+
+/* ---------------------------------------------------------------
+   3. Almacenamiento (IndexedDB con respaldo en localStorage)
+   --------------------------------------------------------------- */
+const DB = (()=>{
+  let db=null, ok=false;
+  function open(){
+    return new Promise(res=>{
+      let req;
+      try{ req = indexedDB.open("clc_muestreo",1); }catch(e){ return res(false); }
+      req.onupgradeneeded = e=>{
+        const d=e.target.result;
+        if(!d.objectStoreNames.contains("samples")) d.createObjectStore("samples",{keyPath:"id"});
+        if(!d.objectStoreNames.contains("tiles"))   d.createObjectStore("tiles");
+        if(!d.objectStoreNames.contains("photos"))  d.createObjectStore("photos");
+      };
+      req.onsuccess=e=>{db=e.target.result;ok=true;res(true);};
+      req.onerror=()=>res(false);
+      req.onblocked=()=>res(false);
+      setTimeout(()=>{ if(!ok) res(false); },3000);
+    });
+  }
+  const tx=(st,mode)=>db.transaction(st,mode).objectStore(st);
+  const p=r=>new Promise((res,rej)=>{r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});
+  return {
+    open, get available(){return ok;},
+    put:(st,val,key)=>ok?p(tx(st,"readwrite").put(val,key)):Promise.resolve(),
+    get:(st,key)=>ok?p(tx(st,"readonly").get(key)):Promise.resolve(undefined),
+    del:(st,key)=>ok?p(tx(st,"readwrite").delete(key)):Promise.resolve(),
+    all:(st)=>ok?p(tx(st,"readonly").getAll()):Promise.resolve([]),
+    count:(st)=>ok?p(tx(st,"readonly").count()):Promise.resolve(0),
+    clear:(st)=>ok?p(tx(st,"readwrite").clear()):Promise.resolve()
+  };
+})();
+
+/* ---------------------------------------------------------------
+   4. Modelo de muestras
+   --------------------------------------------------------------- */
+const Store = {
+  items: [],
+  async load(){
+    if(DB.available){
+      this.items = await DB.all("samples");
+    } else {
+      try{ this.items = JSON.parse(localStorage.getItem("clc_samples")||"[]"); }catch(e){ this.items=[]; }
+    }
+    this.items.sort((a,b)=>a.ts-b.ts);
+    UI.refreshCount();
+  },
+  async save(s){
+    const i=this.items.findIndex(x=>x.id===s.id);
+    if(i>=0) this.items[i]=s; else this.items.push(s);
+    if(DB.available) await DB.put("samples",s); else this._ls();
+    UI.refreshCount(); Mapa.draw();
+  },
+  async remove(id){
+    this.items=this.items.filter(x=>x.id!==id);
+    if(DB.available){ await DB.del("samples",id); await DB.del("photos",id); } else this._ls();
+    UI.refreshCount(); Mapa.draw();
+  },
+  async clear(){
+    this.items=[];
+    if(DB.available){ await DB.clear("samples"); await DB.clear("photos"); } else this._ls();
+    UI.refreshCount(); Mapa.draw();
+  },
+  _ls(){ try{ localStorage.setItem("clc_samples",JSON.stringify(this.items)); }
+         catch(e){ toast("Sin espacio para guardar. Exporta y borra muestras."); } },
+  async photo(id){ return DB.available ? await DB.get("photos",id) : (this._mem&&this._mem[id]); },
+  async setPhoto(id,dataUrl){
+    if(DB.available) await DB.put("photos",dataUrl,id);
+    else { this._mem=this._mem||{}; this._mem[id]=dataUrl; }
+  }
+};
+
+/* ---------------------------------------------------------------
+   5. Fuentes de teselas
+   --------------------------------------------------------------- */
+const SOURCES = {
+  esri:{max:19,attr:"Esri World Imagery — Esri, Maxar, Earthstar Geographics",
+    url:(z,x,y)=>`https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`},
+  esriClarity:{max:19,attr:"Esri Imagery Clarity — Esri, Maxar",
+    url:(z,x,y)=>`https://clarity.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`},
+  osm:{max:19,attr:"© OpenStreetMap contributors",
+    url:(z,x,y)=>`https://tile.openstreetmap.org/${z}/${x}/${y}.png`},
+  labels:{max:19,attr:"",
+    url:(z,x,y)=>`https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/${z}/${y}/${x}`},
+  none:{max:19,attr:"Sin fondo — rejilla de referencia",url:null}
+};
+
+/* ---------------------------------------------------------------
+   6. Motor de mapa (canvas, Web Mercator)
+   --------------------------------------------------------------- */
+const Mapa = {
+  lat:4.6097, lon:-74.0817, z:14,
+  base:"esri", labels:false, follow:false,
+  canvas:null, ctx:null, W:0, H:0, dpr:1,
+  mem:new Map(), pending:new Set(), failed:new Set(),
+
+  init(){
+    this.canvas=$("#map"); this.ctx=this.canvas.getContext("2d");
+    const st=JSON.parse(localStorage.getItem("clc_view")||"null");
+    if(st){ this.lat=st.lat; this.lon=st.lon; this.z=st.z; this.base=st.base||"esri"; this.labels=!!st.labels; }
+    $("#selBase").value=this.base; $("#chkLabels").checked=this.labels;
+    this.resize(); addEventListener("resize",()=>this.resize());
+    this.bindGestures();
+    this.draw();
+  },
+  saveView(){ localStorage.setItem("clc_view",JSON.stringify(
+    {lat:this.lat,lon:this.lon,z:this.z,base:this.base,labels:this.labels})); },
+  resize(){
+    const r=$("#mapwrap").getBoundingClientRect();
+    this.dpr=Math.min(devicePixelRatio||1,2);
+    this.W=r.width; this.H=r.height;
+    this.canvas.width=Math.round(r.width*this.dpr); this.canvas.height=Math.round(r.height*this.dpr);
+    this.ctx.setTransform(this.dpr,0,0,this.dpr,0,0);
+    this.draw();
+  },
+
+  /* --- proyección --- */
+  lon2wx(lon,z){ return (lon+180)/360*256*Math.pow(2,z); },
+  lat2wy(lat,z){ const s=Math.sin(lat*Math.PI/180);
+    return (0.5 - Math.log((1+s)/(1-s))/(4*Math.PI))*256*Math.pow(2,z); },
+  wx2lon(wx,z){ return wx/(256*Math.pow(2,z))*360-180; },
+  wy2lat(wy,z){ const n=Math.PI-2*Math.PI*wy/(256*Math.pow(2,z));
+    return 180/Math.PI*Math.atan(0.5*(Math.exp(n)-Math.exp(-n))); },
+  mPerPx(){ return 156543.03392*Math.cos(this.lat*Math.PI/180)/Math.pow(2,this.z); },
+  toScreen(lat,lon){
+    const z=this.z;
+    return [ (this.lon2wx(lon,z)-this.lon2wx(this.lon,z)) + this.W/2,
+             (this.lat2wy(lat,z)-this.lat2wy(this.lat,z)) + this.H/2 ];
+  },
+  fromScreen(px,py){
+    const z=this.z;
+    return [ this.wy2lat(this.lat2wy(this.lat,z)+(py-this.H/2),z),
+             this.wx2lon(this.lon2wx(this.lon,z)+(px-this.W/2),z) ];
+  },
+
+  /* --- gestos --- */
+  bindGestures(){
+    const el=$("#mapwrap"); const ptr=new Map(); let last=null, pinch=null, moved=0, downT=0;
+    el.addEventListener("pointerdown",e=>{
+      el.setPointerCapture(e.pointerId); ptr.set(e.pointerId,{x:e.clientX,y:e.clientY});
+      if(ptr.size===1){ last={x:e.clientX,y:e.clientY}; moved=0; downT=Date.now(); }
+      if(ptr.size===2){ const [a,b]=[...ptr.values()]; pinch={d:Math.hypot(a.x-b.x,a.y-b.y),z:this.z}; }
+    });
+    el.addEventListener("pointermove",e=>{
+      if(!ptr.has(e.pointerId))return;
+      ptr.set(e.pointerId,{x:e.clientX,y:e.clientY});
+      if(ptr.size===2&&pinch){
+        const [a,b]=[...ptr.values()], d=Math.hypot(a.x-b.x,a.y-b.y);
+        this.setZoom(pinch.z+Math.log2(d/pinch.d)); return;
+      }
+      if(ptr.size===1&&last){
+        const dx=e.clientX-last.x, dy=e.clientY-last.y;
+        moved+=Math.abs(dx)+Math.abs(dy);
+        if(moved>4){ this.follow=false; $("#bFollow").classList.remove("act"); }
+        this.panPx(-dx,-dy); last={x:e.clientX,y:e.clientY};
+      }
+    });
+    const up=e=>{
+      if(ptr.size===1&&moved<6&&Date.now()-downT<400) this.tap(e.clientX,e.clientY);
+      ptr.delete(e.pointerId); if(ptr.size<2)pinch=null; if(ptr.size===0){last=null;this.saveView();}
+    };
+    el.addEventListener("pointerup",up); el.addEventListener("pointercancel",e=>{ptr.delete(e.pointerId);pinch=null;last=null;});
+    el.addEventListener("wheel",e=>{ e.preventDefault();
+      const r=el.getBoundingClientRect(), cx=e.clientX-r.left, cy=e.clientY-r.top;
+      this.zoomAt(cx,cy,-Math.sign(e.deltaY)*0.5); },{passive:false});
+    el.addEventListener("dblclick",e=>{ const r=el.getBoundingClientRect();
+      this.zoomAt(e.clientX-r.left,e.clientY-r.top,1); });
+  },
+  panPx(dx,dy){
+    const z=this.z;
+    const wx=this.lon2wx(this.lon,z)+dx, wy=clamp(this.lat2wy(this.lat,z)+dy,0,256*Math.pow(2,z));
+    this.lon=((this.wx2lon(wx,z)+180)%360+360)%360-180; this.lat=this.wy2lat(wy,z);
+    this.draw();
+  },
+  setZoom(z){ this.z=clamp(z,2,20); this.draw(); this.saveView(); },
+  zoomAt(px,py,dz){
+    const [la,lo]=this.fromScreen(px,py); const z0=this.z; this.z=clamp(this.z+dz,2,20);
+    // mantener el punto bajo el cursor
+    const [nx,ny]=this.toScreen(la,lo); this.panPx(nx-px,ny-py); this.saveView();
+  },
+  tap(cx,cy){
+    const r=$("#mapwrap").getBoundingClientRect(), px=cx-r.left, py=cy-r.top;
+    // radio de acierto mayor en pantallas táctiles (dedo ≈ 9 mm)
+    let best=null,bd=matchMedia("(pointer:coarse)").matches?34:22;
+    for(const s of Store.items){ const [x,y]=this.toScreen(s.lat,s.lon);
+      const d=Math.hypot(x-px,y-py); if(d<bd){bd=d;best=s;} }
+    if(best) UI.showDetail(best.id);
+  },
+  goTo(lat,lon,z){ this.lat=lat; this.lon=lon; if(z)this.z=z; this.draw(); this.saveView(); },
+
+  /* --- teselas --- */
+  key(src,z,x,y){ return src+"/"+z+"/"+x+"/"+y; },
+  async fetchTile(src,z,x,y){
+    const k=this.key(src,z,x,y);
+    if(this.pending.has(k)||this.failed.has(k))return;
+    this.pending.add(k);
+    try{
+      let blob = await DB.get("tiles",k);
+      if(!blob){
+        const url=SOURCES[src].url(z,x,y);
+        const r=await fetch(url,{mode:"cors",cache:"force-cache"});
+        if(!r.ok) throw new Error(r.status);
+        blob=await r.blob();
+        if(DB.available) DB.put("tiles",blob,k).catch(()=>{});
+      }
+      const img = await createImageBitmap(blob);
+      this.mem.set(k,img);
+      if(this.mem.size>900){ const it=this.mem.keys(); for(let i=0;i<200;i++){const kk=it.next().value; this.mem.delete(kk);} }
+      this.pending.delete(k); this.draw();
+    }catch(err){
+      this.pending.delete(k); this.failed.add(k);
+      setTimeout(()=>this.failed.delete(k),20000);
+    }
+  },
+  drawLayer(src,alpha){
+    if(!SOURCES[src].url)return;
+    const ctx=this.ctx, zt=clamp(Math.round(this.z),0,SOURCES[src].max), sc=Math.pow(2,this.z-zt), ts=256*sc;
+    const cwx=this.lon2wx(this.lon,zt), cwy=this.lat2wy(this.lat,zt);
+    const n=Math.pow(2,zt);
+    const x0=Math.floor((cwx-this.W/2/sc)/256), x1=Math.floor((cwx+this.W/2/sc)/256);
+    const y0=clamp(Math.floor((cwy-this.H/2/sc)/256),0,n-1), y1=clamp(Math.floor((cwy+this.H/2/sc)/256),0,n-1);
+    ctx.globalAlpha=alpha||1;
+    for(let x=x0;x<=x1;x++) for(let y=y0;y<=y1;y++){
+      const xw=((x%n)+n)%n, k=this.key(src,zt,xw,y);
+      const sx=(x*256-cwx)*sc+this.W/2, sy=(y*256-cwy)*sc+this.H/2;
+      const img=this.mem.get(k);
+      if(img){ ctx.drawImage(img,sx,sy,ts+0.6,ts+0.6); }
+      else{
+        // sustituto: tesela padre ya cargada
+        let drew=false;
+        for(let up=1;up<=3&&!drew;up++){
+          const pz=zt-up; if(pz<0)break;
+          const pxw=Math.floor(xw/Math.pow(2,up)), py=Math.floor(y/Math.pow(2,up));
+          const pimg=this.mem.get(this.key(src,pz,pxw,py));
+          if(pimg){ const f=Math.pow(2,up), ox=(xw%f)*256/f, oy=(y%f)*256/f;
+            ctx.drawImage(pimg,ox,oy,256/f,256/f,sx,sy,ts+0.6,ts+0.6); drew=true; }
+        }
+        this.fetchTile(src,zt,xw,y);
+      }
+    }
+    ctx.globalAlpha=1;
+  },
+  drawGrid(){
+    const ctx=this.ctx; ctx.fillStyle="#0e141b"; ctx.fillRect(0,0,this.W,this.H);
+    ctx.strokeStyle="#1b2632"; ctx.lineWidth=1;
+    const step=Math.pow(10,Math.floor(Math.log10(this.mPerPx()*100)))/ (111320*Math.cos(this.lat*Math.PI/180)||1);
+    const s=Math.max(step,0.0001);
+    ctx.beginPath();
+    for(let lo=Math.floor(this.lon/s)*s-s*10; lo<this.lon+s*10; lo+=s){
+      const [x]=this.toScreen(this.lat,lo); ctx.moveTo(x,0); ctx.lineTo(x,this.H);}
+    for(let la=Math.floor(this.lat/s)*s-s*10; la<this.lat+s*10; la+=s){
+      const [,y]=this.toScreen(la,this.lon); ctx.moveTo(0,y); ctx.lineTo(this.W,y);}
+    ctx.stroke();
+  },
+  drawSamples(){
+    const ctx=this.ctx;
+    for(const s of Store.items){
+      const [x,y]=this.toScreen(s.lat,s.lon);
+      if(x<-30||y<-30||x>this.W+30||y>this.H+30)continue;
+      const c=(N2BY[s.n2]||{}).color||"#fff";
+      ctx.beginPath(); ctx.arc(x,y,8,0,7); ctx.fillStyle=c; ctx.fill();
+      ctx.lineWidth=2; ctx.strokeStyle="rgba(0,0,0,.85)"; ctx.stroke();
+      ctx.lineWidth=1; ctx.strokeStyle="rgba(255,255,255,.9)"; ctx.beginPath(); ctx.arc(x,y,8,0,7); ctx.stroke();
+      if(this.z>=15){
+        ctx.font="600 10px system-ui"; ctx.textAlign="center";
+        ctx.lineWidth=3; ctx.strokeStyle="rgba(0,0,0,.8)"; ctx.strokeText(s.n2,x,y-12);
+        ctx.fillStyle="#fff"; ctx.fillText(s.n2,x,y-12);
+      }
+    }
+  },
+  drawGPS(){
+    const g=GPS.pos; if(!g)return;
+    const ctx=this.ctx, [x,y]=this.toScreen(g.lat,g.lon);
+    const r=Math.max(6,g.acc/this.mPerPx());
+    ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fillStyle="rgba(62,166,255,.16)"; ctx.fill();
+    ctx.strokeStyle="rgba(62,166,255,.75)"; ctx.lineWidth=1.5; ctx.stroke();
+    if(GPS.heading!=null){                       // cono de orientación
+      const a=(GPS.heading-90)*Math.PI/180, w=0.42;
+      ctx.beginPath(); ctx.moveTo(x,y);
+      ctx.arc(x,y,26,a-w,a+w); ctx.closePath();
+      const gr=ctx.createRadialGradient(x,y,4,x,y,26);
+      gr.addColorStop(0,"rgba(62,166,255,.75)"); gr.addColorStop(1,"rgba(62,166,255,0)");
+      ctx.fillStyle=gr; ctx.fill();
+    }
+    ctx.beginPath(); ctx.arc(x,y,7,0,7); ctx.fillStyle="#3ea6ff"; ctx.fill();
+    ctx.lineWidth=2.5; ctx.strokeStyle="#fff"; ctx.stroke();
+  },
+  drawScale(){
+    const mpp=this.mPerPx(); let m=mpp*90;
+    const p=Math.pow(10,Math.floor(Math.log10(m))); m=(m/p>=5?5:m/p>=2?2:1)*p;
+    $("#scaleline").style.width=(m/mpp)+"px";
+    $("#scaletxt").textContent = m>=1000 ? (m/1000)+" km" : m+" m";
+  },
+  draw(){
+    if(!this.ctx)return;
+    cancelAnimationFrame(this._raf);
+    this._raf=requestAnimationFrame(()=>{
+      const ctx=this.ctx; ctx.clearRect(0,0,this.W,this.H);
+      if(this.base==="none") this.drawGrid();
+      else { ctx.fillStyle="#0e141b"; ctx.fillRect(0,0,this.W,this.H); this.drawLayer(this.base,1); }
+      if(this.labels) this.drawLayer("labels",.9);
+      this.drawSamples(); this.drawGPS(); this.drawScale();
+      const [la,lo]=[this.lat,this.lon];
+      $("#mapmsg").textContent = SOURCES[this.base].attr + "  •  z"+this.z.toFixed(1)+
+        "  •  centro "+la.toFixed(5)+", "+lo.toFixed(5);
+    });
+  }
+};
+
+/* ---------------------------------------------------------------
+   7. GPS
+   --------------------------------------------------------------- */
+const GPS = {
+  pos:null, watchId:null, heading:null, subs:[],
+
+  /* Promedia n lecturas consecutivas: reduce el error del GPS del teléfono,
+     que bajo dosel o entre edificios salta varios metros entre lecturas. */
+  average(n,onTick){
+    return new Promise((res,rej)=>{
+      if(!navigator.geolocation) return rej(new Error("Sin GPS"));
+      const buf=[];
+      const fin=()=>{
+        clearTimeout(tmo); this.subs=this.subs.filter(x=>x!==f);
+        if(!buf.length) return rej(new Error("Sin lecturas"));
+        const med=k=>{const v=buf.map(b=>b[k]).filter(x=>x!=null&&!isNaN(x));
+                      return v.length? v.reduce((a,b)=>a+b,0)/v.length : null;};
+        const lat=med("lat"), lon=med("lon");
+        const mLat=111320, mLon=111320*Math.cos(lat*Math.PI/180);
+        // dispersión real de las lecturas alrededor de la media (en metros)
+        const rms=Math.sqrt(buf.reduce((a,b)=>a+Math.pow((b.lat-lat)*mLat,2)+Math.pow((b.lon-lon)*mLon,2),0)/buf.length);
+        const accMedia=med("acc")||0;
+        res({lat,lon,alt:med("alt"),n:buf.length,
+             acc:Math.max(rms, accMedia/Math.sqrt(buf.length)), disp:rms});
+      };
+      const f=p=>{ buf.push(p); if(onTick)onTick(buf.length,n); if(buf.length>=n) fin(); };
+      const tmo=setTimeout(fin, 6000+n*3000);
+      this.subs.push(f);
+      if(this.pos) f(this.pos);
+    });
+  },
+  start(){
+    if(!navigator.geolocation){ warn("Este navegador no expone GPS. Usa el centro de la mira para capturar."); return; }
+    $("#gpsdot").className="wait"; $("#coords").textContent="Buscando señal GPS…";
+    try{
+      this.watchId=navigator.geolocation.watchPosition(p=>this.onPos(p),e=>this.onErr(e),
+        {enableHighAccuracy:true,maximumAge:2000,timeout:20000});
+    }catch(e){ this.onErr(e); }
+  },
+  onPos(p){
+    const c=p.coords;
+    this.pos={lat:c.latitude,lon:c.longitude,acc:c.accuracy||0,alt:c.altitude,altAcc:c.altitudeAccuracy,
+              spd:c.speed,ts:p.timestamp};
+    $("#gpsdot").className="on";
+    $("#coords").innerHTML=`<b>${c.latitude.toFixed(6)}</b>, <b>${c.longitude.toFixed(6)}</b> · ±${Math.round(c.accuracy)} m`
+      + (c.altitude!=null?` · ${Math.round(c.altitude)} msnm`:"");
+    if(c.heading!=null && !isNaN(c.heading) && c.speed>0.5) this.heading=c.heading;
+    this.subs.slice().forEach(f=>{ try{ f(this.pos); }catch(e){} });
+    if(Mapa.follow) Mapa.goTo(this.pos.lat,this.pos.lon);
+    else Mapa.draw();
+  },
+  onErr(e){
+    $("#gpsdot").className="";
+    const m={1:"Permiso de ubicación denegado",2:"Posición no disponible",3:"Tiempo de espera agotado"}[e&&e.code]||"GPS no disponible";
+    $("#coords").textContent=m+" — usa el centro de la mira";
+    if(e&&e.code===1) warn("Ubicación bloqueada. Concede el permiso de ubicación a esta app (Ajustes del teléfono → Aplicaciones → Ubicación). Recuerda que el GPS solo funciona si la abres por https o localhost, no como archivo suelto.");
+    else if(e&&e.code===3) warn("El GPS tarda en fijar posición. Sal a cielo abierto unos segundos; mientras tanto puedes capturar con el centro de la mira.");
+  }
+};
+
+/* ---------------------------------------------------------------
+   8. Descarga de teselas para uso offline
+   --------------------------------------------------------------- */
+const Downloader = {
+  cancel:false, running:false,
+  tilesForView(zmax){
+    const list=[]; const b=this.bounds();
+    for(let z=Math.max(2,Math.floor(Mapa.z)); z<=zmax; z++){
+      const n=Math.pow(2,z);
+      const x0=Math.floor(Mapa.lon2wx(b.w,z)/256), x1=Math.floor(Mapa.lon2wx(b.e,z)/256);
+      const y0=clamp(Math.floor(Mapa.lat2wy(b.n,z)/256),0,n-1), y1=clamp(Math.floor(Mapa.lat2wy(b.s,z)/256),0,n-1);
+      for(let x=x0;x<=x1;x++) for(let y=y0;y<=y1;y++) list.push([z,((x%n)+n)%n,y]);
+    }
+    return list;
+  },
+  bounds(){
+    const [n,w]=Mapa.fromScreen(0,0), [s,e]=Mapa.fromScreen(Mapa.W,Mapa.H);
+    return {n,s,w,e};
+  },
+  async run(zmax){
+    if(this.running)return;
+    if(!DB.available){ $("#dlInfo").textContent="No se puede guardar la caché: el navegador bloquea el almacenamiento (IndexedDB). Abre la app desde un servidor local o instálala en la pantalla de inicio."; return; }
+    this.running=true; this.cancel=false;
+    const src=Mapa.base==="none"?"esri":Mapa.base;
+    const list=this.tilesForView(zmax);
+    const extra = Mapa.labels ? list.map(t=>["labels",...t]) : [];
+    const jobs = list.map(t=>[src,...t]).concat(extra);
+    let done=0, fail=0;
+    const worker=async()=>{
+      while(jobs.length && !this.cancel){
+        const [s,z,x,y]=jobs.shift();
+        const k=Mapa.key(s,z,x,y);
+        try{
+          const has = await DB.get("tiles",k);
+          if(!has){
+            const r=await fetch(SOURCES[s].url(z,x,y),{mode:"cors"});
+            if(!r.ok) throw 0;
+            await DB.put("tiles",await r.blob(),k);
+          }
+        }catch(e){ fail++; }
+        done++;
+        if(done%5===0||!jobs.length){
+          $("#dlBar").style.width=(done/(done+jobs.length)*100).toFixed(1)+"%";
+          $("#dlInfo").textContent=`Descargando ${done} / ${done+jobs.length} teselas · ${fail} fallidas`;
+        }
+      }
+    };
+    await Promise.all(Array.from({length:6},worker));
+    this.running=false;
+    $("#dlInfo").textContent = this.cancel ? `Detenido: ${done} teselas guardadas.` :
+      `Listo: ${done} teselas en el dispositivo (${fail} fallidas). El área ya funciona sin internet.`;
+    Mapa.draw();
+  }
+};
+
+/* ---------------------------------------------------------------
+   9. Exportación: Shapefile / DBF / ZIP / Esri JSON / GeoJSON / CSV
+   --------------------------------------------------------------- */
+const ENC=new TextEncoder();
+function utf8(s,max){
+  const b=ENC.encode(String(s==null?"":s));
+  if(b.length<=max) return b;
+  let end=max;                                   // b[end] = primer byte excluido
+  while(end>0 && (b[end]&0xC0)===0x80) end--;    // retrocede si parte una secuencia multibyte
+  return b.slice(0,end);
+}
+
+const FIELDS=[ // nombre (<=10), tipo, largo, decimales
+  ["ID","C",24,0],["FECHA","D",8,0],["HORA","C",8,0],
+  ["N1_COD","C",2,0],["N1_NOM","C",60,0],["N2_COD","C",4,0],["N2_NOM","C",80,0],
+  ["LON","N",20,8],["LAT","N",20,8],["ALT_M","N",12,2],["PREC_M","N",10,2],
+  ["FUENTE","C",10,0],["CONF","C",6,0],["OBS","C",200,0],["FOTO","C",40,0]
+];
+function attrsOf(s){
+  const n2=N2BY[s.n2]||{}; const d=new Date(s.ts);
+  return {
+    ID:s.id,
+    FECHA:`${d.getFullYear()}${pad(d.getMonth()+1,2)}${pad(d.getDate(),2)}`,
+    HORA:`${pad(d.getHours(),2)}:${pad(d.getMinutes(),2)}:${pad(d.getSeconds(),2)}`,
+    N1_COD:n2.n1||"", N1_NOM:n2.n1nom||"", N2_COD:s.n2, N2_NOM:n2.nom||"",
+    LON:s.lon, LAT:s.lat, ALT_M:(s.alt==null?0:s.alt), PREC_M:(s.acc==null?0:s.acc),
+    FUENTE:s.src||"", CONF:s.conf||"", OBS:s.obs||"", FOTO:s.photo?("fotos/"+s.id+".jpg"):""
+  };
+}
+function buildSHP(items){
+  const n=items.length, len=100+n*28;
+  const buf=new ArrayBuffer(len), dv=new DataView(buf);
+  let xmin=1e9,ymin=1e9,xmax=-1e9,ymax=-1e9;
+  items.forEach(s=>{xmin=Math.min(xmin,s.lon);xmax=Math.max(xmax,s.lon);
+                    ymin=Math.min(ymin,s.lat);ymax=Math.max(ymax,s.lat);});
+  if(!n){xmin=ymin=xmax=ymax=0;}
+  dv.setInt32(0,9994); dv.setInt32(24,len/2); dv.setInt32(28,1000,true); dv.setInt32(32,1,true);
+  dv.setFloat64(36,xmin,true);dv.setFloat64(44,ymin,true);dv.setFloat64(52,xmax,true);dv.setFloat64(60,ymax,true);
+  let o=100;
+  items.forEach((s,i)=>{ dv.setInt32(o,i+1); dv.setInt32(o+4,10);
+    dv.setInt32(o+8,1,true); dv.setFloat64(o+12,s.lon,true); dv.setFloat64(o+20,s.lat,true); o+=28; });
+  return {shp:new Uint8Array(buf),bbox:[xmin,ymin,xmax,ymax]};
+}
+function buildSHX(items,bbox){
+  const n=items.length, len=100+n*8;
+  const buf=new ArrayBuffer(len), dv=new DataView(buf);
+  dv.setInt32(0,9994); dv.setInt32(24,len/2); dv.setInt32(28,1000,true); dv.setInt32(32,1,true);
+  dv.setFloat64(36,bbox[0],true);dv.setFloat64(44,bbox[1],true);dv.setFloat64(52,bbox[2],true);dv.setFloat64(60,bbox[3],true);
+  let off=50; // 100 bytes = 50 words
+  for(let i=0;i<n;i++){ dv.setInt32(100+i*8,off); dv.setInt32(104+i*8,10); off+=14; }
+  return new Uint8Array(buf);
+}
+function buildDBF(items){
+  const n=items.length, hlen=32+32*FIELDS.length+1;
+  const rlen=1+FIELDS.reduce((a,f)=>a+f[2],0);
+  const out=new Uint8Array(hlen+n*rlen+1); const dv=new DataView(out.buffer);
+  const d=new Date();
+  out[0]=0x03; out[1]=d.getFullYear()-1900; out[2]=d.getMonth()+1; out[3]=d.getDate();
+  dv.setUint32(4,n,true); dv.setUint16(8,hlen,true); dv.setUint16(10,rlen,true);
+  out[29]=0x00; // language driver: se declara UTF-8 vía .cpg
+  FIELDS.forEach((f,i)=>{ const o=32+i*32, nm=utf8(f[0],10);
+    out.set(nm,o); out[o+11]=f[1].charCodeAt(0); out[o+16]=f[2]; out[o+17]=f[3]; });
+  out[hlen-1]=0x0D;
+  let o=hlen;
+  items.forEach(s=>{
+    const a=attrsOf(s); out[o++]=0x20;
+    FIELDS.forEach(f=>{
+      let v=a[f[0]], b;
+      if(f[1]==="N"){ let t=Number(v||0).toFixed(f[3]); if(t.length>f[2])t=t.slice(0,f[2]);
+        b=ENC.encode(" ".repeat(f[2]-t.length)+t); }
+      else { b=utf8(v,f[2]); const p=new Uint8Array(f[2]).fill(0x20); p.set(b,0); b=p; }
+      out.set(b,o); o+=f[2];
+    });
+  });
+  out[o]=0x1A;
+  return out;
+}
+const PRJ='GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],'+
+          'PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]]';
+
+/* --- ZIP (método store) --- */
+const CRCT=(()=>{const t=new Uint32Array(256);for(let i=0;i<256;i++){let c=i;
+  for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[i]=c>>>0;}return t;})();
+function crc32(u8){let c=0xFFFFFFFF;for(let i=0;i<u8.length;i++)c=CRCT[(c^u8[i])&255]^(c>>>8);return (c^0xFFFFFFFF)>>>0;}
+function zip(files){
+  const enc=new TextEncoder(), parts=[], cd=[]; let off=0;
+  const d=new Date(), dt=((d.getHours()<<11)|(d.getMinutes()<<5)|(d.getSeconds()>>1)),
+        dd=(((d.getFullYear()-1980)<<9)|((d.getMonth()+1)<<5)|d.getDate());
+  files.forEach(f=>{
+    const nm=enc.encode(f.name), data=f.data, c=crc32(data);
+    const lh=new Uint8Array(30+nm.length), v=new DataView(lh.buffer);
+    v.setUint32(0,0x04034b50,true); v.setUint16(4,20,true); v.setUint16(6,0x0800,true);
+    v.setUint16(8,0,true); v.setUint16(10,dt,true); v.setUint16(12,dd,true);
+    v.setUint32(14,c,true); v.setUint32(18,data.length,true); v.setUint32(22,data.length,true);
+    v.setUint16(26,nm.length,true); lh.set(nm,30);
+    parts.push(lh,data);
+    const ch=new Uint8Array(46+nm.length), w=new DataView(ch.buffer);
+    w.setUint32(0,0x02014b50,true); w.setUint16(4,20,true); w.setUint16(6,20,true);
+    w.setUint16(8,0x0800,true); w.setUint16(10,0,true); w.setUint16(12,dt,true); w.setUint16(14,dd,true);
+    w.setUint32(16,c,true); w.setUint32(20,data.length,true); w.setUint32(24,data.length,true);
+    w.setUint16(28,nm.length,true); w.setUint32(42,off,true); ch.set(nm,46);
+    cd.push(ch); off+=lh.length+data.length;
+  });
+  let cdlen=0; cd.forEach(c=>cdlen+=c.length);
+  const eo=new Uint8Array(22), e=new DataView(eo.buffer);
+  e.setUint32(0,0x06054b50,true); e.setUint16(8,cd.length,true); e.setUint16(10,cd.length,true);
+  e.setUint32(12,cdlen,true); e.setUint32(16,off,true);
+  return new Blob([...parts,...cd,eo],{type:"application/zip"});
+}
+function b64ToU8(dataUrl){
+  const b=atob(dataUrl.split(",")[1]); const u=new Uint8Array(b.length);
+  for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i); return u;
+}
+const Export = {
+  name(){ return ($("#expName").value||"muestras_clc").replace(/[^\w\-]+/g,"_"); },
+  guard(){ if(!Store.items.length){ toast("No hay muestras para exportar."); return false; } return true; },
+  async shapefile(){
+    if(!this.guard())return;
+    const it=Store.items, nm=this.name();
+    const {shp,bbox}=buildSHP(it);
+    const files=[
+      {name:nm+".shp",data:shp},
+      {name:nm+".shx",data:buildSHX(it,bbox)},
+      {name:nm+".dbf",data:buildDBF(it)},
+      {name:nm+".prj",data:ENC.encode(PRJ)},
+      {name:nm+".cpg",data:ENC.encode("UTF-8")},
+      {name:"LEEME.txt",data:ENC.encode(
+        "Muestras Corine Land Cover (N1/N2)\r\nSistema de referencia: GCS WGS 1984 (EPSG:4326)\r\n"+
+        "Geometria: puntos\r\nRegistros: "+it.length+"\r\nGenerado: "+new Date().toLocaleString()+"\r\n\r\n"+
+        "Campos: "+FIELDS.map(f=>f[0]+"("+f[1]+f[2]+(f[3]?","+f[3]:"")+")").join(", ")+"\r\n")}
+    ];
+    for(const s of it){ if(s.photo){ const p=await Store.photo(s.id);
+      if(p) files.push({name:"fotos/"+s.id+".jpg",data:b64ToU8(p)}); } }
+    await download(zip(files),nm+"_shapefile.zip");
+    toast("Shapefile listo ("+it.length+" puntos).");
+  },
+  async esriJSON(){
+    if(!this.guard())return;
+    const tmap={C:"esriFieldTypeString",N:"esriFieldTypeDouble",D:"esriFieldTypeDate"};
+    const fs={
+      displayFieldName:"N2_NOM", geometryType:"esriGeometryPoint",
+      spatialReference:{wkid:4326,latestWkid:4326},
+      fields:[{name:"OBJECTID",type:"esriFieldTypeOID",alias:"OBJECTID"}].concat(
+        FIELDS.map(f=>({name:f[0],type:tmap[f[1]],alias:f[0],
+          ...(f[1]==="C"?{length:f[2]}:{})}))),
+      features:Store.items.map((s,i)=>{
+        const a=attrsOf(s); const d=new Date(s.ts);
+        return {geometry:{x:s.lon,y:s.lat,spatialReference:{wkid:4326}},
+                attributes:{OBJECTID:i+1,...a,FECHA:d.getTime()}};
+      })
+    };
+    await download(new Blob([JSON.stringify(fs,null,1)],{type:"application/json"}),this.name()+"_esri.json");
+    toast("Esri JSON listo.");
+  },
+  async geojson(){
+    if(!this.guard())return;
+    const gj={type:"FeatureCollection",name:this.name(),
+      crs:{type:"name",properties:{name:"urn:ogc:def:crs:OGC:1.3:CRS84"}},
+      features:Store.items.map(s=>({type:"Feature",
+        geometry:{type:"Point",coordinates:[s.lon,s.lat,s.alt==null?0:s.alt]},
+        properties:attrsOf(s)}))};
+    await download(new Blob([JSON.stringify(gj,null,1)],{type:"application/geo+json"}),this.name()+".geojson");
+    toast("GeoJSON listo.");
+  },
+  async csv(){
+    if(!this.guard())return;
+    const q=v=>'"'+String(v==null?"":v).replace(/"/g,'""')+'"';
+    const head=FIELDS.map(f=>f[0]).join(",");
+    const rows=Store.items.map(s=>{const a=attrsOf(s);return FIELDS.map(f=>q(a[f[0]])).join(",");});
+    await download(new Blob(["﻿"+head+"\r\n"+rows.join("\r\n")],{type:"text/csv;charset=utf-8"}),this.name()+".csv");
+    toast("CSV listo.");
+  }
+};
+
+/* ---------------------------------------------------------------
+   10. Integración con el teléfono
+   (instalación, almacenamiento persistente, pantalla encendida,
+    vibración, brújula y modo sol)
+   --------------------------------------------------------------- */
+const Movil = {
+  prompt:null, wake:null,
+  cfg:{sol:false,wake:true,vibra:true,share:true},
+
+  async init(){
+    try{ Object.assign(this.cfg, JSON.parse(localStorage.getItem("clc_movil")||"{}")); }catch(e){}
+    $("#chkWake").checked=this.cfg.wake; $("#chkVibra").checked=this.cfg.vibra;
+    $("#chkShare").checked=this.cfg.share && !!navigator.canShare;
+    document.body.classList.toggle("sol",this.cfg.sol);
+
+    // Service worker: hace que la app abra sin conexión una vez visitada.
+    if("serviceWorker" in navigator && location.protocol.startsWith("http")){
+      try{ await navigator.serviceWorker.register("./sw.js",{scope:"./"}); }catch(e){}
+    }
+    addEventListener("beforeinstallprompt",e=>{ e.preventDefault(); this.prompt=e; });
+    addEventListener("appinstalled",()=>{ this.prompt=null; toast("Aplicación instalada en el teléfono."); });
+
+    // Reintenta el bloqueo de pantalla al volver a la app.
+    document.addEventListener("visibilitychange",()=>{ if(!document.hidden) this.keepAwake(); });
+    this.keepAwake();
+    this.info();
+  },
+  save(){ localStorage.setItem("clc_movil",JSON.stringify(this.cfg)); },
+
+  vibrate(p){ if(this.cfg.vibra && navigator.vibrate) try{ navigator.vibrate(p); }catch(e){} },
+
+  async keepAwake(){
+    if(!this.cfg.wake || !("wakeLock" in navigator) || document.hidden){ return; }
+    if(this.wake && !this.wake.released) return;
+    try{ this.wake=await navigator.wakeLock.request("screen");
+         this.wake.addEventListener("release",()=>{ this.wake=null; }); }catch(e){}
+  },
+  releaseAwake(){ if(this.wake){ try{ this.wake.release(); }catch(e){} this.wake=null; } },
+
+  async installApp(){
+    if(this.prompt){ this.prompt.prompt(); const r=await this.prompt.userChoice;
+      this.prompt=null; toast(r.outcome==="accepted"?"Instalando…":"Instalación cancelada."); return; }
+    if(matchMedia("(display-mode: standalone)").matches || navigator.standalone){
+      toast("Ya estás usando la app instalada."); return; }
+    toast(/iPhone|iPad|iPod/.test(navigator.userAgent)
+      ? "En iPhone: botón Compartir ⬆ → «Añadir a pantalla de inicio»."
+      : "En el menú del navegador (⋮) elige «Instalar aplicación» o «Añadir a pantalla de inicio».", 5200);
+  },
+
+  async persist(){
+    if(!navigator.storage || !navigator.storage.persist){ toast("Tu navegador no permite proteger el almacenamiento."); return; }
+    const ok=await navigator.storage.persist();
+    toast(ok ? "Datos protegidos: el sistema no borrará las muestras ni las teselas."
+             : "El sistema no concedió la protección; instala la app para conseguirla.", 4200);
+    this.info();
+  },
+
+  async info(){
+    const bits=[];
+    bits.push(matchMedia("(display-mode: standalone)").matches||navigator.standalone
+      ? "Ejecutándose como app instalada." : "Ejecutándose en el navegador.");
+    if(navigator.storage&&navigator.storage.persisted)
+      bits.push((await navigator.storage.persisted()) ? "Almacenamiento protegido." : "Almacenamiento sin proteger.");
+    if(navigator.storage&&navigator.storage.estimate){
+      const e=await navigator.storage.estimate();
+      bits.push(`${(e.usage/1048576).toFixed(1)} MB usados de ${(e.quota/1048576).toFixed(0)} MB disponibles.`);
+    }
+    if(!("wakeLock" in navigator)) bits.push("Este navegador no puede mantener la pantalla encendida.");
+    $("#movilInfo").textContent=bits.join(" ");
+  },
+
+  /* Brújula: en iOS exige permiso explícito tras un toque del usuario. */
+  async compass(){
+    if(this._comp)return; this._comp=true;
+    try{
+      const D=window.DeviceOrientationEvent;
+      if(!D)return;
+      if(typeof D.requestPermission==="function"){
+        const p=await D.requestPermission(); if(p!=="granted")return;
+      }
+      const h=e=>{
+        let deg=null;
+        if(e.webkitCompassHeading!=null) deg=e.webkitCompassHeading;
+        else if(e.absolute && e.alpha!=null) deg=360-e.alpha;
+        if(deg!=null){ GPS.heading=deg; Mapa.draw(); }
+      };
+      addEventListener("deviceorientationabsolute",h);
+      addEventListener("deviceorientation",h);
+    }catch(e){}
+  }
+};
+
+/* ---------------------------------------------------------------
+   11. Interfaz
+   --------------------------------------------------------------- */
+const UI = {
+  draft:null,
+  init(){
+    // sheets
+    $$("[data-close]").forEach(b=>b.addEventListener("click",e=>{
+      e.target.closest(".sheet").classList.remove("open");}));
+    $("#bCapture").onclick=()=>this.openCapture();
+    $("#bList").onclick=()=>this.openList();
+    $("#bExport").onclick=()=>$("#shExport").classList.add("open");
+    $("#bLayers").onclick=()=>$("#shLayers").classList.add("open");
+    $("#bIn").onclick=()=>Mapa.zoomAt(Mapa.W/2,Mapa.H/2,1);
+    $("#bOut").onclick=()=>Mapa.zoomAt(Mapa.W/2,Mapa.H/2,-1);
+    $("#bFollow").onclick=()=>{
+      Mapa.follow=!Mapa.follow; $("#bFollow").classList.toggle("act",Mapa.follow);
+      Movil.compass();                       // el toque sirve de gesto para pedir la brújula
+      if(Mapa.follow){ if(GPS.pos){Mapa.goTo(GPS.pos.lat,GPS.pos.lon,Math.max(Mapa.z,16));}
+        else toast("Esperando señal GPS…"); }
+    };
+    $("#bSol").onclick=()=>{
+      Movil.cfg.sol=!Movil.cfg.sol; Movil.save();
+      document.body.classList.toggle("sol",Movil.cfg.sol);
+      $("#bSol").classList.toggle("act",Movil.cfg.sol); Mapa.draw();
+    };
+    // opciones del teléfono
+    $("#bInstall").onclick=()=>Movil.installApp();
+    $("#bPersist").onclick=()=>Movil.persist();
+    $("#chkWake").onchange=e=>{ Movil.cfg.wake=e.target.checked; Movil.save();
+      e.target.checked?Movil.keepAwake():Movil.releaseAwake(); };
+    $("#chkVibra").onchange=e=>{ Movil.cfg.vibra=e.target.checked; Movil.save(); Movil.vibrate(30); };
+    $("#chkShare").onchange=e=>{ Movil.cfg.share=e.target.checked; Movil.save(); };
+    // captura
+    $("#srcGPS").onclick=()=>this.setSource("GPS");
+    $("#srcMap").onclick=()=>this.setSource("MAPA");
+    $("#bAvg").onclick=()=>this.averageGPS();
+    $("#bSave").onclick=()=>this.save();
+    $("#bPhoto").onclick=()=>$("#fPhoto").click();
+    $("#fPhoto").onchange=e=>this.loadPhoto(e.target.files[0]);
+    this.buildClassUI();
+    // exportar
+    $("#eShp").onclick=()=>Export.shapefile();
+    $("#eEsri").onclick=()=>Export.esriJSON();
+    $("#eGeo").onclick=()=>Export.geojson();
+    $("#eCsv").onclick=()=>Export.csv();
+    // lista
+    $("#bClear").onclick=async()=>{ if(confirm("¿Eliminar TODAS las muestras? Esta acción no se puede deshacer."))
+      { await Store.clear(); this.openList(); toast("Muestras eliminadas."); } };
+    $("#bImport").onclick=()=>$("#fileImport").click();
+    $("#fileImport").onchange=e=>this.importFile(e.target.files[0]);
+    // capas
+    $("#selBase").onchange=e=>{Mapa.base=e.target.value;Mapa.saveView();Mapa.draw();};
+    $("#chkLabels").onchange=e=>{Mapa.labels=e.target.checked;Mapa.saveView();Mapa.draw();};
+    $("#bGo").onclick=()=>{
+      const m=($("#gotoXY").value||"").split(/[,\s]+/).map(Number).filter(v=>!isNaN(v));
+      if(m.length>=2){ Mapa.goTo(m[0],m[1],Math.max(Mapa.z,15)); $("#shLayers").classList.remove("open"); }
+      else toast("Formato: lat, lon");
+    };
+    $("#bEstim").onclick=()=>{
+      const n=Downloader.tilesForView(+$("#dlZoom").value).length*(Mapa.labels?2:1);
+      $("#dlInfo").textContent=`≈ ${n.toLocaleString()} teselas · ~${(n*22/1024).toFixed(1)} MB aprox. en el área visible.`;
+    };
+    $("#bDownload").onclick=()=>{
+      const z=+$("#dlZoom").value, n=Downloader.tilesForView(z).length;
+      if(n>12000){ if(!confirm(`Son ${n.toLocaleString()} teselas. Puede tardar y ocupar mucho espacio. ¿Continuar?`))return; }
+      Downloader.run(z);
+    };
+    $("#bCancelDl").onclick=()=>{Downloader.cancel=true;};
+    $("#bCacheInfo").onclick=async()=>{
+      const n=await DB.count("tiles");
+      let q="";
+      if(navigator.storage&&navigator.storage.estimate){ const e=await navigator.storage.estimate();
+        q=` · ${(e.usage/1048576).toFixed(1)} MB usados de ${(e.quota/1048576).toFixed(0)} MB`; }
+      $("#cacheInfo").textContent=`${n.toLocaleString()} teselas guardadas${q}`;
+    };
+    $("#bCacheClear").onclick=async()=>{ if(confirm("¿Vaciar la caché de imágenes satelitales?"))
+      { await DB.clear("tiles"); Mapa.mem.clear(); Mapa.draw(); $("#cacheInfo").textContent="Caché vacía."; } };
+    // detalle
+    $("#bDel").onclick=async()=>{ if(confirm("¿Eliminar esta muestra?"))
+      { await Store.remove(this._det); $("#shDetail").classList.remove("open"); toast("Muestra eliminada."); } };
+    $("#bGoto").onclick=()=>{ const s=Store.items.find(x=>x.id===this._det);
+      if(s){Mapa.goTo(s.lat,s.lon,Math.max(Mapa.z,17)); $("#shDetail").classList.remove("open"); $("#shList").classList.remove("open");} };
+    $("#bEdit").onclick=()=>{ const s=Store.items.find(x=>x.id===this._det);
+      if(s){ $("#shDetail").classList.remove("open"); this.openCapture(s); } };
+  },
+
+  refreshCount(){ $("#chipN").innerHTML="Muestras <b>"+Store.items.length+"</b>"; },
+
+  buildClassUI(){
+    const g=$("#n1grid"); g.innerHTML="";
+    CLC.forEach(c=>{
+      const b=document.createElement("button");
+      b.className="n1b"; b.dataset.n1=c.cod;
+      b.innerHTML=`<span class="sw" style="background:${c.color}"></span><span><b>${c.cod}.</b> ${c.nom}</span>`;
+      b.onclick=()=>{ this.selN1=c.cod; this.selN2=null; this.renderN1(); this.renderN2(); };
+      g.appendChild(b);
+    });
+  },
+  renderN1(){ $$("#n1grid .n1b").forEach(b=>b.classList.toggle("sel",b.dataset.n1===this.selN1)); },
+  renderN2(){
+    const box=$("#n2list"); box.innerHTML="";
+    const c=CLC.find(x=>x.cod===this.selN1);
+    if(!c){ box.innerHTML='<p class="note">Selecciona primero una categoría de Nivel 1.</p>'; return; }
+    c.hijos.forEach(h=>{
+      const b=document.createElement("button");
+      b.className="n2b"+(this.selN2===h.cod?" sel":""); b.dataset.n2=h.cod;
+      b.innerHTML=`<span class="sw" style="background:${h.color}"></span><span class="cod">${h.cod}</span><span>${h.nom}</span>`;
+      b.onclick=()=>{ this.selN2=h.cod; this.renderN2(); };
+      box.appendChild(b);
+    });
+  },
+  setSource(src){
+    this.src=src;
+    $("#srcGPS").classList.toggle("pri",src==="GPS");
+    $("#srcMap").classList.toggle("pri",src==="MAPA");
+    let lat,lon,acc=null,alt=null;
+    if(src==="GPS"){
+      if(!GPS.pos){ toast("Sin posición GPS todavía."); this.setSource("MAPA"); return; }
+      lat=GPS.pos.lat; lon=GPS.pos.lon; acc=GPS.pos.acc; alt=GPS.pos.alt;
+    } else { lat=Mapa.lat; lon=Mapa.lon; }
+    this.pos={lat,lon,acc,alt};
+    this.renderPos();
+  },
+  renderPos(nota){
+    const {lat,lon,acc,alt}=this.pos;
+    const fuente={GPS:"receptor GPS del teléfono", MAPA:"centro de la mira en el mapa",
+                  GPS_PROM:"promedio de varias lecturas GPS"}[this.src]||this.src;
+    $("#capPos").innerHTML =
+      `<b>${lat.toFixed(6)}, ${lon.toFixed(6)}</b> (WGS84)<br>${fmtDMS(lat,"NS")} ${fmtDMS(lon,"EW")}`+
+      (acc!=null?` · precisión ±${Math.round(acc)} m`:"")+(alt!=null?` · ${Math.round(alt)} msnm`:"")+
+      `<br><span style="color:var(--txt2)">Fuente: ${fuente}${nota?" · "+nota:""}</span>`;
+  },
+  /* Promedia lecturas del GPS para fijar el punto con menos error. */
+  async averageGPS(){
+    if(!GPS.pos){ toast("Sin señal GPS todavía."); return; }
+    const b=$("#bAvg"), etiqueta=b.textContent;
+    b.disabled=true;
+    try{
+      const r=await GPS.average(10,(i,n)=>{ b.textContent=`🎚 Promediando… ${i}/${n}`; });
+      this.pos={lat:r.lat,lon:r.lon,acc:r.acc,alt:r.alt};
+      this.src="GPS_PROM";
+      $("#srcGPS").classList.remove("pri"); $("#srcMap").classList.remove("pri");
+      this.renderPos(`${r.n} lecturas, dispersión ${r.disp.toFixed(1)} m`);
+      Movil.vibrate(40);
+    }catch(e){ toast("No se pudo promediar: "+e.message); }
+    b.disabled=false; b.textContent=etiqueta;
+  },
+  async loadPhoto(file){
+    if(!file)return;
+    const img=new Image(); const url=URL.createObjectURL(file);
+    img.onload=()=>{
+      const max=1024, sc=Math.min(1,max/Math.max(img.width,img.height));
+      const c=document.createElement("canvas"); c.width=img.width*sc|0; c.height=img.height*sc|0;
+      c.getContext("2d").drawImage(img,0,0,c.width,c.height);
+      this.photoData=c.toDataURL("image/jpeg",.72);
+      $("#photoPrev").src=this.photoData; $("#photoPrev").style.display="block";
+      URL.revokeObjectURL(url);
+    };
+    img.src=url;
+  },
+  openCapture(edit){
+    this.editing = edit||null;
+    this.photoData=null; $("#photoPrev").style.display="none"; $("#fPhoto").value="";
+    $("#capTitle").textContent = edit?"Editar muestra":"Nueva muestra";
+    if(edit){
+      this.selN1=(N2BY[edit.n2]||{}).n1; this.selN2=edit.n2;
+      this.pos={lat:edit.lat,lon:edit.lon,acc:edit.acc,alt:edit.alt}; this.src=edit.src;
+      $("#fObs").value=edit.obs||""; $("#fConf").value=edit.conf||"Alta";
+      $("#capPos").innerHTML=`<b>${edit.lat.toFixed(6)}, ${edit.lon.toFixed(6)}</b> (WGS84)<br>
+        ${fmtDMS(edit.lat,"NS")} ${fmtDMS(edit.lon,"EW")}<span style="color:var(--txt2)"> · posición original conservada</span>`;
+      $("#srcGPS").classList.remove("pri"); $("#srcMap").classList.remove("pri");
+      if(edit.photo) Store.photo(edit.id).then(p=>{ if(p){this.photoData=p;$("#photoPrev").src=p;$("#photoPrev").style.display="block";} });
+    } else {
+      this.selN1=this.selN1||null; this.selN2=null;
+      $("#fObs").value=""; $("#fConf").value="Alta";
+      this.setSource(GPS.pos?"GPS":"MAPA");
+    }
+    this.renderN1(); this.renderN2();
+    $("#shCapture").classList.add("open");
+  },
+  async save(){
+    if(!this.selN2){ toast("Selecciona la categoría de Nivel 2."); return; }
+    const e=this.editing;
+    const s = e ? {...e} : {id:uid(),ts:Date.now()};
+    s.n2=this.selN2; s.lat=this.pos.lat; s.lon=this.pos.lon;
+    s.acc=this.pos.acc; s.alt=this.pos.alt; s.src=this.src||"MAPA";
+    s.conf=$("#fConf").value; s.obs=$("#fObs").value.trim();
+    s.photo=!!this.photoData;
+    if(this.photoData) await Store.setPhoto(s.id,this.photoData);
+    await Store.save(s);
+    $("#shCapture").classList.remove("open");
+    Movil.vibrate([35,45,35]);
+    toast((e?"Muestra actualizada: ":"Muestra guardada: ")+s.n2+" · "+(N2BY[s.n2]||{}).nom);
+    this.editing=null;
+  },
+  openList(){
+    const box=$("#listBox"); box.innerHTML="";
+    if(!Store.items.length) box.innerHTML='<p class="note">Aún no hay muestras. Usa el botón <b>Capturar</b>.</p>';
+    const counts={};
+    Store.items.forEach(s=>counts[s.n2]=(counts[s.n2]||0)+1);
+    $("#stats").innerHTML = Store.items.length
+      ? "<b>"+Store.items.length+"</b> muestras · "+Object.keys(counts).sort().map(k=>
+          `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:8px">
+           <span class="sw" style="background:${(N2BY[k]||{}).color}"></span>${k}: ${counts[k]}</span>`).join("")
+      : "";
+    [...Store.items].reverse().forEach(s=>{
+      const n2=N2BY[s.n2]||{}; const d=new Date(s.ts);
+      const el=document.createElement("div"); el.className="item";
+      el.innerHTML=`<span class="sw" style="width:20px;height:20px;background:${n2.color}"></span>
+        <div class="meta"><div class="t">${s.n2} — ${n2.nom||""}</div>
+        <div class="s">${s.lat.toFixed(5)}, ${s.lon.toFixed(5)} · ${d.toLocaleDateString()} ${pad(d.getHours(),2)}:${pad(d.getMinutes(),2)} · ${s.src}${s.photo?" · 📷":""}</div></div>
+        <span class="go">›</span>`;
+      el.onclick=()=>this.showDetail(s.id);
+      box.appendChild(el);
+    });
+    $("#shList").classList.add("open");
+  },
+  async showDetail(id){
+    const s=Store.items.find(x=>x.id===id); if(!s)return;
+    this._det=id; const a=attrsOf(s); const n2=N2BY[s.n2]||{};
+    $("#detTitle").innerHTML=`<span class="sw" style="display:inline-block;background:${n2.color};vertical-align:-2px"></span> ${s.n2} ${n2.nom||""}`;
+    const rows=[["ID",s.id],["Nivel 1",a.N1_COD+" — "+a.N1_NOM],["Nivel 2",a.N2_COD+" — "+a.N2_NOM],
+      ["Longitud",s.lon.toFixed(7)],["Latitud",s.lat.toFixed(7)],
+      ["Coord. DMS",fmtDMS(s.lat,"NS")+" "+fmtDMS(s.lon,"EW")],
+      ["Altitud",s.alt!=null?Math.round(s.alt)+" m":"—"],
+      ["Precisión",s.acc!=null?"±"+Math.round(s.acc)+" m":"—"],
+      ["Fuente",s.src],["Confianza",s.conf||"—"],
+      ["Fecha",new Date(s.ts).toLocaleString()],["Observaciones",s.obs||"—"]];
+    $("#detBody").innerHTML=rows.map(r=>`<div class="kv"><span>${r[0]}</span><span>${String(r[1]).replace(/</g,"&lt;")}</span></div>`).join("")
+      + '<img class="photo" id="detPhoto" style="display:none">';
+    if(s.photo){ const p=await Store.photo(s.id);
+      if(p){ const im=$("#detPhoto"); im.src=p; im.style.display="block"; } }
+    $("#shDetail").classList.add("open");
+  },
+  async importFile(f){
+    if(!f)return;
+    try{
+      const j=JSON.parse(await f.text());
+      const feats = j.features || [];
+      let n=0;
+      for(const ft of feats){
+        const g=ft.geometry||{}; let lon,lat;
+        if(g.type==="Point"){ [lon,lat]=g.coordinates; }
+        else if(ft.geometry&&ft.geometry.x!=null){ lon=ft.geometry.x; lat=ft.geometry.y; }
+        else continue;
+        const p=ft.properties||ft.attributes||{};
+        const n2=p.N2_COD||p.n2||""; if(!N2BY[n2])continue;
+        await Store.save({id:p.ID||uid(), ts:Date.now(), n2, lat, lon,
+          alt:+p.ALT_M||null, acc:+p.PREC_M||null, src:p.FUENTE||"IMPORT",
+          conf:p.CONF||"", obs:p.OBS||"", photo:false});
+        n++;
+      }
+      toast(n+" muestras importadas."); this.openList();
+    }catch(e){ toast("Archivo no válido."); }
+    $("#fileImport").value="";
+  }
+};
+
+/* ---------------------------------------------------------------
+   12. Arranque
+   --------------------------------------------------------------- */
+(async function main(){
+  const ok = await DB.open();
+  if(!ok) warn("Almacenamiento avanzado bloqueado (IndexedDB). Las muestras se guardan en modo básico y no se podrán descargar teselas para uso sin conexión. Abre la aplicación desde su dirección web e instálala en la pantalla de inicio.");
+  else if(location.protocol==="file:") warn("Estás abriendo el archivo directamente: en el teléfono el GPS suele quedar bloqueado así. Publica la carpeta en una dirección https (o localhost) e instala la app desde ahí.");
+  Mapa.init();
+  UI.init();
+  await Movil.init();
+  await Store.load();
+  Mapa.draw();
+  GPS.start();
+  $("#bSol").classList.toggle("act",Movil.cfg.sol);
+  addEventListener("beforeunload",()=>Mapa.saveView());
+  addEventListener("pagehide",()=>Mapa.saveView());
+  document.addEventListener("visibilitychange",()=>{ if(!document.hidden){ Mapa.resize(); Mapa.draw(); } });
+  // el teclado virtual y la barra del navegador cambian la altura visible
+  if(window.visualViewport) visualViewport.addEventListener("resize",()=>Mapa.resize());
+  addEventListener("orientationchange",()=>setTimeout(()=>Mapa.resize(),250));
+})();
+</script>
+</body>
+</html>
